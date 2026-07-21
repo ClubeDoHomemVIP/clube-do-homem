@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 
 const DATA_DIR = join(process.cwd(), 'data');
 const STATE_FILE = join(DATA_DIR, 'content-bot.json');
@@ -25,6 +26,8 @@ export function contentConfig(env = process.env) {
   return {
     enabled: env.CONTENT_BOT_ENABLED === 'true',
     chatId: env.CONTENT_TELEGRAM_CHAT_ID || env.TELEGRAM_FREE_CHAT_ID,
+    controlKey: env.CONTENT_CONTROL_KEY || env.ADMIN_TOKEN,
+    adminChatId: env.CONTENT_ADMIN_CHAT_ID,
     sources: list(env.CONTENT_REDDIT_SOURCES, DEFAULT_SOURCES),
     newsQueries: queryList(env.CONTENT_NEWS_QUERIES),
     useGoogleTrends: env.CONTENT_GOOGLE_TRENDS === 'true',
@@ -136,6 +139,12 @@ export function composePost(item) {
   ].join('\n');
 }
 
+function secretMatches(received = '', expected = '') {
+  const a = Buffer.from(String(received));
+  const b = Buffer.from(String(expected));
+  return Boolean(expected) && a.length === b.length && timingSafeEqual(a, b);
+}
+
 async function loadState() {
   await mkdir(DATA_DIR, { recursive: true });
   if (!existsSync(STATE_FILE)) return { seen: [], slots: {} };
@@ -147,7 +156,11 @@ async function saveState(state) {
   await writeFile(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-export async function publishTrending({ config = contentConfig(), telegram, fetcher = fetch } = {}) {
+async function sendSelected({ item, chatId, telegram }) {
+  await telegram('sendMessage', { chat_id: chatId, text: composePost(item), disable_web_page_preview: false });
+}
+
+export async function publishTrending({ config = contentConfig(), telegram, fetcher = fetch, approvalRequired = false, adminChatId } = {}) {
   if (!config.chatId) throw new Error('CONTENT_TELEGRAM_CHAT_ID ou TELEGRAM_FREE_CHAT_ID não configurado');
   const state = await loadState();
   const requests = config.sources.map(source => fetchRedditTrending(source, { fetcher }));
@@ -157,14 +170,76 @@ export async function publishTrending({ config = contentConfig(), telegram, fetc
   const items = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
   const [selected] = rankCandidates(items, { seen: state.seen, minScore: config.minScore, allowNsfw: config.allowNsfw });
   if (!selected) return { published: false, reason: 'Nenhum conteúdo novo elegível' };
-  await telegram('sendMessage', {
-    chat_id: config.chatId,
-    text: composePost(selected),
-    disable_web_page_preview: false
-  });
+  if (approvalRequired) {
+    const destination = adminChatId || state.control?.adminChatId || config.adminChatId;
+    if (!destination) throw new Error('Registre o administrador com /registrar SUA_CHAVE');
+    state.pending = selected;
+    await telegram('sendMessage', {
+      chat_id: destination,
+      text: `PRÉVIA — ainda não publicado\n\n${composePost(selected)}\n\n/aprovar SUA_CHAVE\n/recusar SUA_CHAVE`,
+      disable_web_page_preview: false
+    });
+    await saveState(state);
+    return { published: false, pendingApproval: true, item: selected };
+  }
+  await sendSelected({ item: selected, chatId: config.chatId, telegram });
   state.seen.push(selected.id);
   await saveState(state);
   return { published: true, item: selected };
+}
+
+export async function handleControlCommand({ text, chatId, telegram, env = process.env } = {}) {
+  const config = contentConfig(env);
+  const [command = '', key = ''] = String(text || '').trim().split(/\s+/, 2);
+  const action = command.toLowerCase().split('@')[0];
+  if (!['/registrar', '/ativar', '/desativar', '/aprovacao', '/automatico', '/aprovar', '/recusar', '/status'].includes(action)) return { handled: false };
+  if (!secretMatches(key, config.controlKey)) {
+    await telegram('sendMessage', { chat_id: chatId, text: 'Chave inválida.' });
+    return { handled: true, authorized: false };
+  }
+  const state = await loadState();
+  state.control ||= { enabled: config.enabled, approvalRequired: true, adminChatId: config.adminChatId || null };
+  if (state.control.adminChatId && String(state.control.adminChatId) !== String(chatId) && action !== '/registrar') {
+    await telegram('sendMessage', { chat_id: chatId, text: 'Este chat não é o administrador registrado.' });
+    return { handled: true, authorized: false };
+  }
+  let response = '';
+  if (action === '/registrar') { state.control.adminChatId = chatId; response = 'Administrador registrado. Modo de aprovação ativado.'; state.control.approvalRequired = true; }
+  if (action === '/ativar') { state.control.enabled = true; response = 'Postagens ativadas.'; }
+  if (action === '/desativar') { state.control.enabled = false; response = 'Postagens desativadas.'; }
+  if (action === '/aprovacao') { state.control.approvalRequired = true; response = 'Modo de aprovação ativado.'; }
+  if (action === '/automatico') { state.control.approvalRequired = false; response = 'Modo automático ativado.'; }
+  if (action === '/recusar') { state.pending = null; response = 'Prévia descartada.'; }
+  if (action === '/aprovar') {
+    if (!state.pending) response = 'Não há publicação aguardando aprovação.';
+    else {
+      await sendSelected({ item: state.pending, chatId: config.chatId, telegram });
+      state.seen.push(state.pending.id); state.pending = null; response = 'Publicação aprovada e enviada.';
+    }
+  }
+  if (action === '/status') response = `Bot: ${state.control.enabled ? 'ATIVO' : 'DESATIVADO'}\nModo: ${state.control.approvalRequired ? 'APROVAÇÃO' : 'AUTOMÁTICO'}\nPrévia pendente: ${state.pending ? 'SIM' : 'NÃO'}`;
+  await saveState(state);
+  await telegram('sendMessage', { chat_id: chatId, text: response });
+  return { handled: true, authorized: true, action };
+}
+
+export function startTelegramController({ telegram, env = process.env, onError = console.error } = {}) {
+  const config = contentConfig(env);
+  if (!config.controlKey || !env.TELEGRAM_BOT_TOKEN) return { enabled: false, stop() {} };
+  let stopped = false; let offset = 0;
+  const loop = async () => {
+    while (!stopped) {
+      try {
+        const updates = await telegram('getUpdates', { offset, timeout: 25, allowed_updates: ['message'] });
+        for (const update of updates.result || []) {
+          offset = update.update_id + 1;
+          if (update.message?.text) await handleControlCommand({ text: update.message.text, chatId: update.message.chat.id, telegram, env });
+        }
+      } catch (error) { onError(error); await new Promise(resolve => setTimeout(resolve, 3000)); }
+    }
+  };
+  loop();
+  return { enabled: true, stop: () => { stopped = true; } };
 }
 
 function localParts(date, timezone) {
@@ -176,18 +251,19 @@ function localParts(date, timezone) {
 
 export function startContentScheduler({ telegram, env = process.env, onError = console.error } = {}) {
   const config = contentConfig(env);
-  if (!config.enabled) return { enabled: false, stop() {} };
   let running = false;
   const timer = setInterval(async () => {
     if (running) return;
     const now = localParts(new Date(), config.timezone);
     if (!config.times.includes(now.time)) return;
     const state = await loadState();
+    const enabled = state.control?.enabled ?? config.enabled;
+    if (!enabled) return;
     const slot = `${now.date}:${now.time}`;
     if (state.slots?.[slot]) return;
     running = true;
     try {
-      await publishTrending({ config, telegram });
+      await publishTrending({ config, telegram, approvalRequired: state.control?.approvalRequired ?? true, adminChatId: state.control?.adminChatId });
       const updated = await loadState();
       updated.slots = { ...updated.slots, [slot]: true };
       await saveState(updated);
@@ -195,5 +271,5 @@ export function startContentScheduler({ telegram, env = process.env, onError = c
     finally { running = false; }
   }, 30_000);
   timer.unref?.();
-  return { enabled: true, stop: () => clearInterval(timer) };
+  return { enabled: config.enabled, stop: () => clearInterval(timer) };
 }

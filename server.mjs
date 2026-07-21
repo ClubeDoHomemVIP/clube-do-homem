@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { publishTrending, startContentScheduler } from './content-bot.mjs';
+import { publishTrending, startContentScheduler, startTelegramController } from './content-bot.mjs';
 
 const ROOT = process.cwd();
 const DATA_FILE = join(ROOT, 'data', 'store.json');
@@ -160,3 +160,4 @@ const server = http.createServer(async (req, res) => {
 });
 server.listen(PORT, () => console.log(`Clube OS rodando em http://localhost:${PORT}`));
 startContentScheduler({ telegram, onError: error => console.error('[content-bot]', error.message) });
+startTelegramController({ telegram, onError: error => console.error('[content-control]', error.message) });

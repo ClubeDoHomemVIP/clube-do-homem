@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { composePost, contentConfig, fetchGoogleNews, fetchGoogleTrends, fetchRedditTrending, rankCandidates } from '../content-bot.mjs';
+import { composePost, contentConfig, fetchGoogleNews, fetchGoogleTrends, fetchRedditTrending, handleControlCommand, rankCandidates } from '../content-bot.mjs';
 
 test('configura horários e grupo gratuito', () => {
   const config = contentConfig({ TELEGRAM_FREE_CHAT_ID: '-1001', CONTENT_POST_TIMES: '19:30,22:30' });
@@ -44,4 +44,12 @@ test('gera postagem com crédito e link', () => {
   const text = composePost({ title: 'Uma conversa interessante', comments: 30, score: 80, source: 'r/teste', url: 'https://reddit.com/x' });
   assert.match(text, /Fonte: r\/teste/);
   assert.match(text, /https:\/\/reddit\.com\/x/);
+});
+
+test('rejeita comando com chave incorreta', async () => {
+  const sent = [];
+  const telegram = async (method, payload) => { sent.push({ method, payload }); return { ok: true }; };
+  const result = await handleControlCommand({ text: '/ativar errada', chatId: 123, telegram, env: { ADMIN_TOKEN: 'correta' } });
+  assert.equal(result.authorized, false);
+  assert.match(sent[0].payload.text, /inválida/i);
 });

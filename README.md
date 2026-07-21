@@ -32,6 +32,16 @@ O bot consulta notícias sobre OnlyFans, Privacy, criadores 18+ e o mercado adul
 
 Por padrão, conteúdo marcado como NSFW é ignorado. Use apenas fontes e mídias cuja republicação seja permitida; o bot publica título, métricas e link para a fonte.
 
+### Controle privado pelo Telegram
+
+Configure `CONTENT_CONTROL_KEY` (ou use o `ADMIN_TOKEN`) e mande ao bot no privado:
+
+- `/registrar CHAVE`: registra seu chat como administrador.
+- `/ativar CHAVE` e `/desativar CHAVE`: controla o agendador.
+- `/aprovacao CHAVE`: recebe prévias antes da publicação.
+- `/automatico CHAVE`: publica sem aprovação manual.
+- `/aprovar CHAVE`, `/recusar CHAVE` e `/status CHAVE`: gerenciam a fila.
+
 ## Rotas principais
 
 - `GET /api/dashboard`
