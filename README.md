@@ -22,10 +22,10 @@ Acesse `http://localhost:3000`. Sem credenciais, Telegram e pagamentos operam em
 
 ## Curadoria automática para o grupo gratuito
 
-O bot consulta o Google Trends Brasil e, opcionalmente, fontes Reddit autorizadas; cria uma chamada curta com crédito e publica no Telegram sem copiar o conteúdo integral.
+O bot consulta notícias sobre OnlyFans, Privacy, criadores 18+ e o mercado adulto; cria uma chamada curta com crédito e publica no Telegram sem copiar o conteúdo integral. Termos ligados a vazamentos e pirataria são bloqueados.
 
 1. Configure `TELEGRAM_FREE_CHAT_ID` (ou `CONTENT_TELEGRAM_CHAT_ID`).
-2. O Google Trends vem ativo. `CONTENT_REDDIT_SOURCES` é opcional e exige que o ambiente consiga acessar o Reddit.
+2. Ajuste os temas separados por `|` em `CONTENT_NEWS_QUERIES`. Google Trends e Reddit são opcionais.
 3. Defina os horários em `CONTENT_POST_TIMES` no fuso `CONTENT_TIMEZONE`.
 4. Ative com `CONTENT_BOT_ENABLED=true` e mantenha o servidor online.
 5. Para testar manualmente, envie `POST /api/jobs/content` com `Authorization: Bearer SEU_ADMIN_TOKEN`.

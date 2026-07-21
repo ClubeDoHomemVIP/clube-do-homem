@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { composePost, contentConfig, fetchGoogleTrends, fetchRedditTrending, rankCandidates } from '../content-bot.mjs';
+import { composePost, contentConfig, fetchGoogleNews, fetchGoogleTrends, fetchRedditTrending, rankCandidates } from '../content-bot.mjs';
 
 test('configura horários e grupo gratuito', () => {
   const config = contentConfig({ TELEGRAM_FREE_CHAT_ID: '-1001', CONTENT_POST_TIMES: '19:30,22:30' });
@@ -21,6 +21,14 @@ test('lê assuntos em alta do Google Trends', async () => {
   const [item] = await fetchGoogleTrends({ fetcher });
   assert.equal(item.title, 'Tema popular');
   assert.equal(item.score, 20000);
+});
+
+test('busca notícias do nicho e bloqueia vazamentos', async () => {
+  const xml = '<rss><channel><item><title>Novidades no OnlyFans</title><link>https://news.example/oficial</link><source>Portal</source></item><item><title>Pack vazado de criadora</title><link>https://news.example/leak</link><source>Outro</source></item></channel></rss>';
+  const fetcher = async () => ({ ok: true, text: async () => xml });
+  const items = await fetchGoogleNews('OnlyFans Brasil', { fetcher });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].source, 'Portal');
 });
 
 test('filtra repetidos e NSFW e prioriza engajamento', () => {

@@ -6,6 +6,8 @@ const DATA_DIR = join(process.cwd(), 'data');
 const STATE_FILE = join(DATA_DIR, 'content-bot.json');
 const DEFAULT_TIMES = ['12:30', '19:30', '22:30'];
 const DEFAULT_SOURCES = [];
+const DEFAULT_NEWS_QUERIES = ['OnlyFans Brasil', 'Privacy criadores', 'criadores de conteúdo adulto', 'mercado de conteúdo adulto'];
+const BLOCKED_TERMS = /\b(leak|leaks|leaked|vazad[oa]s?|sem consentimento|pirataria|pack vazado)\b/i;
 
 function list(value, fallback) {
   return String(value || '').split(',').map(item => item.trim()).filter(Boolean).length
@@ -13,17 +15,45 @@ function list(value, fallback) {
     : fallback;
 }
 
+function queryList(value) {
+  return String(value || '').split('|').map(item => item.trim()).filter(Boolean).length
+    ? String(value).split('|').map(item => item.trim()).filter(Boolean)
+    : DEFAULT_NEWS_QUERIES;
+}
+
 export function contentConfig(env = process.env) {
   return {
     enabled: env.CONTENT_BOT_ENABLED === 'true',
     chatId: env.CONTENT_TELEGRAM_CHAT_ID || env.TELEGRAM_FREE_CHAT_ID,
     sources: list(env.CONTENT_REDDIT_SOURCES, DEFAULT_SOURCES),
-    useGoogleTrends: env.CONTENT_GOOGLE_TRENDS !== 'false',
+    newsQueries: queryList(env.CONTENT_NEWS_QUERIES),
+    useGoogleTrends: env.CONTENT_GOOGLE_TRENDS === 'true',
     times: list(env.CONTENT_POST_TIMES, DEFAULT_TIMES),
     timezone: env.CONTENT_TIMEZONE || 'America/Sao_Paulo',
     minScore: Number(env.CONTENT_MIN_SCORE || 10),
     allowNsfw: env.CONTENT_ALLOW_NSFW === 'true'
   };
+}
+
+export async function fetchGoogleNews(query, { fetcher = fetch } = {}) {
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
+  const response = await fetcher(url);
+  if (!response.ok) throw new Error(`Google Notícias: HTTP ${response.status}`);
+  const xml = await response.text();
+  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map((match, index) => {
+    const block = match[1];
+    const title = xmlTag(block, 'title');
+    return {
+      id: `news:${title.toLowerCase()}`,
+      source: xmlTag(block, 'source') || 'Google Notícias',
+      title,
+      url: xmlTag(block, 'link'),
+      score: Math.max(20, 1000 - index * 10),
+      comments: 0,
+      nsfw: false,
+      createdAt: new Date(xmlTag(block, 'pubDate') || Date.now()).toISOString()
+    };
+  }).filter(item => item.title && item.url && !BLOCKED_TERMS.test(item.title));
 }
 
 function decodeXml(value = '') {
@@ -89,12 +119,15 @@ export function rankCandidates(items, { seen = [], minScore = 10, allowNsfw = fa
 
 export function composePost(item) {
   const cleanTitle = item.title.replace(/\s+/g, ' ').slice(0, 220);
+  const engagement = item.comments
+    ? `💬 ${item.comments} comentários • ⬆️ ${item.score} votos`
+    : '📈 Tendência selecionada do mercado adulto';
   return [
-    '🔥 ASSUNTO EM ALTA',
+    '🔥 HOT NEWS • 18+',
     '',
     cleanTitle,
     '',
-    `💬 ${item.comments} comentários • ⬆️ ${item.score} votos`,
+    engagement,
     `Fonte: ${item.source}`,
     '',
     `Leia e participe: ${item.url}`,
@@ -118,6 +151,7 @@ export async function publishTrending({ config = contentConfig(), telegram, fetc
   if (!config.chatId) throw new Error('CONTENT_TELEGRAM_CHAT_ID ou TELEGRAM_FREE_CHAT_ID não configurado');
   const state = await loadState();
   const requests = config.sources.map(source => fetchRedditTrending(source, { fetcher }));
+  requests.push(...config.newsQueries.map(query => fetchGoogleNews(query, { fetcher })));
   if (config.useGoogleTrends) requests.push(fetchGoogleTrends({ fetcher }));
   const results = await Promise.allSettled(requests);
   const items = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
