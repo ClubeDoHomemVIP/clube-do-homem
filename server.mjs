@@ -91,6 +91,20 @@ async function verifySyncPayTransaction(identifier, expectedAmount) {
   return { verified: String(transaction.status).toLowerCase() === 'completed' && amountMatches, transaction };
 }
 
+async function createSyncPayCashIn({ amount, description, client }) {
+  const token = await syncPayToken();
+  const webhookUrl = `${String(process.env.APP_URL || '').replace(/\/$/, '')}/api/webhooks/syncpay`;
+  if (!webhookUrl.startsWith('https://')) throw new Error('APP_URL pública não configurada');
+  const response = await fetch('https://api.syncpayments.com.br/api/partner/v1/cash-in', {
+    method: 'POST',
+    headers: { accept: 'application/json', authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ amount, description, webhook_url: webhookUrl, client })
+  });
+  const result = await response.json();
+  if (!response.ok || !result.identifier || !result.pix_code) throw new Error(result.message || 'Falha ao gerar PIX na SyncPay');
+  return result;
+}
+
 async function grantAccess(store, member) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   const expires = Math.floor(Date.now() / 1000) + 86400;
@@ -158,6 +172,21 @@ async function api(req, res, url) {
     }
     return json(res, 201, member);
   }
+  if (req.method === 'POST' && url.pathname === '/api/checkout/pix') {
+    const input = await body(req);
+    const plan = input.plan === 'lifetime' ? 'Vitalício' : 'Mensal';
+    const cpf = String(input.cpf || '').replace(/\D/g, '');
+    const phone = String(input.phone || '').replace(/\D/g, '');
+    if (!input.name || !input.email || cpf.length !== 11 || ![10, 11].includes(phone.length)) return json(res, 400, { error: 'Preencha nome, e-mail, CPF e telefone válidos' });
+    const amount = plan === 'Vitalício' ? store.settings.lifetimePrice : store.settings.monthlyPrice;
+    const member = { id: randomUUID(), name: String(input.name).trim(), email: String(input.email).trim().toLowerCase(), telegram: input.telegram || 'Não vinculado', telegramId: null, status: 'pending', plan, amount, expiresAt: null, joinedAt: new Date().toISOString(), affiliate: input.affiliate || 'Direto' };
+    const charge = await createSyncPayCashIn({ amount, description: `${store.settings.planName} - ${plan}`, client: { name: member.name, cpf, email: member.email, phone } });
+    store.members.unshift(member);
+    store.payments.unshift({ id: charge.identifier, memberId: member.id, customer: member.name, amount, status: 'pending', createdAt: new Date().toISOString(), paidAt: null, provider: 'SyncPay' });
+    store.events.unshift(event('payment.created', `PIX gerado para ${member.name}`));
+    await save(store);
+    return json(res, 201, { identifier: charge.identifier, pixCode: charge.pix_code, amount, plan });
+  }
   if (req.method === 'POST' && url.pathname === '/api/jobs/renewals') {
     const now = Date.now(); let removed = 0, reminded = 0;
     for (const member of store.members) {
@@ -194,7 +223,8 @@ async function api(req, res, url) {
     if (['paid', 'approved', 'completed'].includes(status)) {
       const verified = await verifySyncPayTransaction(id, data.amount);
       if (!verified.verified) return json(res, 409, { error: 'Pagamento não confirmado na SyncPay' });
-      const memberId = data.external_reference || data.externalreference || data.member_id || verified.transaction.reference_id;
+      const pendingPayment = store.payments.find(payment => payment.id === id);
+      const memberId = data.external_reference || data.externalreference || data.member_id || pendingPayment?.memberId;
       if (!memberId) return json(res, 400, { error: 'Referência do assinante ausente' });
       await processPayment(store, { id, memberId, amount: Number(verified.transaction.amount || data.amount || 0), provider: 'SyncPay' });
     }
@@ -209,6 +239,14 @@ async function api(req, res, url) {
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const server = http.createServer(async (req, res) => {
   try {
+    const origin = req.headers.origin;
+    if (origin && ['https://clubedohomemvip.github.io', 'http://localhost:3000', 'http://127.0.0.1:3000'].includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    }
+    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     const requested = url.pathname === '/' ? 'index.html' : url.pathname === '/oferta' ? 'oferta.html' : url.pathname.slice(1);
