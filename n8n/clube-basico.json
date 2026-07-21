@@ -1,0 +1,78 @@
+{
+  "id": "clubeDoHomemBasico01",
+  "name": "Clube do Homem - Pagamentos e Renovações",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pushinpay-clube-do-homem",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook Pushin Pay",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "clube-pushinpay-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.APP_URL || 'http://localhost:3000') + '/api/webhooks/pushinpay' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-webhook-secret", "value": "={{ $env.PUSHINPAY_WEBHOOK_SECRET || '' }}" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.body || $json) }}",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Processar no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": { "respondWith": "json", "responseBody": "={{ $json }}", "options": {} },
+      "id": "3",
+      "name": "Responder Pushin Pay",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [480, 0]
+    },
+    {
+      "parameters": { "rule": { "interval": [{ "field": "days", "triggerAtHour": 9 }] } },
+      "id": "4",
+      "name": "Todo dia às 09h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.APP_URL || 'http://localhost:3000') + '/api/jobs/renewals' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + $env.ADMIN_TOKEN }}" }] },
+        "options": {}
+      },
+      "id": "5",
+      "name": "Processar Renovações",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 220]
+    }
+  ],
+  "connections": {
+    "Webhook Pushin Pay": { "main": [[{ "node": "Processar no Backend", "type": "main", "index": 0 }]] },
+    "Processar no Backend": { "main": [[{ "node": "Responder Pushin Pay", "type": "main", "index": 0 }]] },
+    "Todo dia às 09h": { "main": [[{ "node": "Processar Renovações", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "America/Sao_Paulo" },
+  "active": false,
+  "versionId": "f812de46-a8e6-4cca-99aa-2df2075d5333",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

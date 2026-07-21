@@ -46,6 +46,13 @@ Configure `CONTENT_CONTROL_KEY` (ou use o `ADMIN_TOKEN`) e mande ao bot no priva
 
 Execute `supabase/schema.sql` no SQL Editor do projeto. As tabelas usam RLS sem acesso anônimo; o servidor deve utilizar somente `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`, mantidos fora do GitHub.
 
+## n8n local
+
+- `npm run n8n:import`: importa o fluxo básico desativado.
+- `npm run n8n`: abre o editor local em `http://127.0.0.1:5678`.
+- Os dados ficam em `data/n8n` e a criptografia usa `N8N_ENCRYPTION_KEY` ou `ADMIN_TOKEN`.
+- O fluxo encaminha o webhook da Pushin Pay ao backend e executa renovações diariamente às 09h.
+
 ## Rotas principais
 
 - `GET /api/dashboard`

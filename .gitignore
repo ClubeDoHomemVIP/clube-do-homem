@@ -1,4 +1,5 @@
 .env
 data/store.json
+data/n8n/
 node_modules/
 *.log
