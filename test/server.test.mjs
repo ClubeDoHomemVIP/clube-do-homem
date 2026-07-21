@@ -4,4 +4,4 @@ test.before(async()=>{proc=spawn(process.execPath,['server.mjs'],{env:{...proces
 test.after(()=>proc?.kill());
 test('dashboard retorna estrutura completa',async()=>{const r=await fetch(`http://localhost:${port}/api/dashboard`);assert.equal(r.status,200);const d=await r.json();assert.ok(d.metrics);assert.ok(Array.isArray(d.members));assert.ok(Array.isArray(d.events))});
 test('arquivos fora da pasta pública são bloqueados',async()=>{const r=await fetch(`http://localhost:${port}/..%2Fpackage.json`);assert.notEqual(r.status,200)});
-test('página pública de oferta está disponível',async()=>{const r=await fetch(`http://localhost:${port}/oferta`);assert.equal(r.status,200);const html=await r.text();assert.match(html,/R\$<\/sup><b>19/);assert.match(html,/Vitalício/)});
+test('página pública de oferta está disponível',async()=>{const r=await fetch(`http://localhost:${port}/oferta`);assert.equal(r.status,200);const html=await r.text();assert.match(html,/R\$<\/sup><b>19/);assert.match(html,/Vitalício/);assert.match(html,/https:\/\/t\.me\/previasclubedohomem/)});
