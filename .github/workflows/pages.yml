@@ -27,7 +27,7 @@ jobs:
           mkdir -p _site
           cp public/oferta.html _site/index.html
           cp public/oferta.css public/oferta-image.css public/oferta.js _site/
-          cp public/clube-hero.jpeg public/og.jpg _site/
+          cp public/clube-hero.jpeg public/clube-logo.png public/og.jpg _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
