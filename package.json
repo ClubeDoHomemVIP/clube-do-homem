@@ -9,12 +9,15 @@
     "n8n": "node --env-file=.env scripts/start-n8n.mjs",
     "n8n:import": "node --env-file=.env scripts/start-n8n.mjs import:workflow --input=n8n/clube-basico.json",
     "build": "node scripts/build-site.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "n8n": "^2.30.8"
+    "n8n": "^2.30.8",
+    "wrangler": "^4.28.1"
   }
 }
