@@ -4,11 +4,13 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { publishTrending, startContentScheduler, startTelegramController } from './content-bot.mjs';
+import { createSupabaseClient } from './supabase-client.mjs';
 
 const ROOT = process.cwd();
 const DATA_FILE = join(ROOT, 'data', 'store.json');
 const PUBLIC = join(ROOT, 'public');
 const PORT = Number(process.env.PORT || 3000);
+const supabase = createSupabaseClient();
 
 const seed = () => ({
   members: [
@@ -109,6 +111,10 @@ function dashboard(store) {
 
 async function api(req, res, url) {
   const store = await load();
+  if (req.method === 'GET' && url.pathname === '/api/health') {
+    try { return json(res, 200, { ok: true, database: await supabase.health(), telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN) }); }
+    catch (error) { return json(res, 503, { ok: false, database: false, error: error.message }); }
+  }
   if (req.method === 'GET' && url.pathname === '/api/dashboard') return json(res, 200, dashboard(store));
   if (req.method === 'POST' && url.pathname === '/api/demo/payment') {
     const input = await body(req); const member = store.members.find(m => m.id === input.memberId) || store.members.find(m => m.status === 'overdue');
@@ -116,7 +122,14 @@ async function api(req, res, url) {
   }
   if (req.method === 'POST' && url.pathname === '/api/members') {
     const input = await body(req); const member = { id: randomUUID(), name: input.name, email: input.email, telegram: input.telegram || 'Não vinculado', telegramId: input.telegramId || null, status: 'pending', plan: input.plan || 'Mensal', amount: input.plan === 'Vitalício' ? store.settings.lifetimePrice : store.settings.monthlyPrice, expiresAt: null, joinedAt: new Date().toISOString(), affiliate: input.affiliate || 'Direto' };
-    store.members.unshift(member); store.events.unshift(event('lead.created', `Novo lead: ${member.name}`)); await save(store); return json(res, 201, member);
+    const createdEvent = event('lead.created', `Novo lead: ${member.name}`);
+    store.members.unshift(member); store.events.unshift(createdEvent); await save(store);
+    if (supabase.enabled) {
+      await supabase.createCustomer(member);
+      await supabase.createSubscription({ customer_id: member.id, plan: member.plan === 'Vitalício' ? 'lifetime' : 'monthly', amount_cents: Math.round(member.amount * 100), status: 'pending' });
+      await supabase.recordEvent(createdEvent);
+    }
+    return json(res, 201, member);
   }
   if (req.method === 'POST' && url.pathname === '/api/jobs/renewals') {
     const now = Date.now(); let removed = 0, reminded = 0;
