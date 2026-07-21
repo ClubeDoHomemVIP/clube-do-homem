@@ -192,13 +192,19 @@ export async function handleControlCommand({ text, chatId, telegram, env = proce
   const config = contentConfig(env);
   const [command = '', key = ''] = String(text || '').trim().split(/\s+/, 2);
   const action = command.toLowerCase().split('@')[0];
-  if (action === '/start' || action === '/ajuda') {
+  if (['/start', '/ajuda', '/planos', '/grupo_free', '/vip'].includes(action)) {
     const siteUrl = env.PUBLIC_SITE_URL || 'https://clubedohomemvip.github.io/clube-do-homem/';
     const freeUrl = env.TELEGRAM_FREE_URL || 'https://t.me/previasclubedohomem';
     const reply = action === '/start'
       ? `Bem-vindo ao Clube do Homem 🔞\n\nEscolha uma opção:\n• Conhecer os planos: ${siteUrl}\n• Entrar no grupo de prévias grátis: ${freeUrl}\n\nApós a confirmação do pagamento, seu convite individual para o VIP será enviado por aqui.`
+      : action === '/grupo_free' ? `Entre gratuitamente no grupo de prévias:\n${freeUrl}`
+      : action === '/planos' || action === '/vip' ? `Veja os planos Mensal e Vitalício:\n${siteUrl}#planos`
       : `Precisa de ajuda?\n\nPlanos e acesso: ${siteUrl}\nPrévias gratuitas: ${freeUrl}\n\nSe o pagamento já foi realizado, aguarde a confirmação automática antes de tentar novamente.`;
-    await telegram('sendMessage', { chat_id: chatId, text: reply, disable_web_page_preview: true });
+    await telegram('sendMessage', { chat_id: chatId, text: reply, disable_web_page_preview: true, reply_markup: { inline_keyboard: [
+      [{ text: '⭐ Ver planos VIP', url: `${siteUrl}#planos` }],
+      [{ text: '🎁 Entrar no grupo grátis', url: freeUrl }],
+      [{ text: '🆘 Ajuda', callback_data: 'ajuda' }]
+    ] } });
     return { handled: true, authorized: true, action };
   }
   if (!['/registrar', '/ativar', '/desativar', '/aprovacao', '/automatico', '/aprovar', '/recusar', '/status'].includes(action)) return { handled: false };
@@ -239,10 +245,14 @@ export function startTelegramController({ telegram, env = process.env, onError =
   const loop = async () => {
     while (!stopped) {
       try {
-        const updates = await telegram('getUpdates', { offset, timeout: 25, allowed_updates: ['message'] });
+        const updates = await telegram('getUpdates', { offset, timeout: 25, allowed_updates: ['message', 'callback_query'] });
         for (const update of updates.result || []) {
           offset = update.update_id + 1;
           if (update.message?.text) await handleControlCommand({ text: update.message.text, chatId: update.message.chat.id, telegram, env });
+          if (update.callback_query?.data === 'ajuda') {
+            await telegram('answerCallbackQuery', { callback_query_id: update.callback_query.id });
+            await handleControlCommand({ text: '/ajuda', chatId: update.callback_query.message.chat.id, telegram, env });
+          }
         }
       } catch (error) { onError(error); await new Promise(resolve => setTimeout(resolve, 3000)); }
     }
