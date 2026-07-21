@@ -42,6 +42,10 @@ Configure `CONTENT_CONTROL_KEY` (ou use o `ADMIN_TOKEN`) e mande ao bot no priva
 - `/automatico CHAVE`: publica sem aprovação manual.
 - `/aprovar CHAVE`, `/recusar CHAVE` e `/status CHAVE`: gerenciam a fila.
 
+## Supabase
+
+Execute `supabase/schema.sql` no SQL Editor do projeto. As tabelas usam RLS sem acesso anônimo; o servidor deve utilizar somente `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`, mantidos fora do GitHub.
+
 ## Rotas principais
 
 - `GET /api/dashboard`
