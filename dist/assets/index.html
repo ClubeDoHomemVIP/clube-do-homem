@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clube OS</title><meta name="description" content="Gestão de assinaturas e acesso ao Telegram">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand"><span class="brand-mark">C</span><span>CLUBE <b>OS</b></span></div>
+  <nav>
+    <button class="nav active" data-view="overview"><span>⌂</span> Visão geral</button>
+    <button class="nav" data-view="members"><span>♙</span> Assinantes <i id="memberCount">0</i></button>
+    <button class="nav" data-view="payments"><span>◇</span> Pagamentos</button>
+    <button class="nav" data-view="affiliates"><span>⌁</span> Afiliados</button>
+    <button class="nav" data-view="automations"><span>⚡</span> Automações</button>
+  </nav>
+  <div class="side-bottom"><div class="status"><span></span><div><b>Sistema operacional</b><small>Todos os serviços online</small></div></div><button class="nav" data-view="settings"><span>⚙</span> Configurações</button></div>
+</aside>
+<main>
+  <header><div><p class="eyebrow">PAINEL DE CONTROLE</p><h1 id="pageTitle">Visão geral</h1></div><div class="header-actions"><button class="icon-btn" title="Notificações">●</button><div class="avatar">GH</div></div></header>
+  <section id="overview" class="view active">
+    <div class="welcome"><div><span class="live">● AO VIVO</span><h2>Bom dia, Gustavo.</h2><p>Sua comunidade segue crescendo. <strong>4 novas vendas</strong> foram confirmadas hoje.</p></div><button class="primary" id="simulateBtn">＋ Simular venda PIX</button></div>
+    <div class="metrics" id="metrics"></div>
+    <div class="grid-main">
+      <article class="card revenue-card"><div class="card-head"><div><p class="label">RECEITA</p><h3>Desempenho mensal</h3></div><span class="pill">Últimos 7 meses</span></div><div id="chart" class="chart"></div></article>
+      <article class="card health-card"><div class="card-head"><div><p class="label">SAÚDE DA OPERAÇÃO</p><h3>Assinaturas</h3></div></div><div class="donut-wrap"><div class="donut" id="donut"><div><b id="donutNumber">0</b><small>membros</small></div></div></div><div class="legend"><span><i class="green"></i>Ativos <b id="activeLegend">0</b></span><span><i class="orange"></i>A vencer <b id="expiringLegend">0</b></span><span><i class="red"></i>Inadimplentes <b id="overdueLegend">0</b></span></div></article>
+    </div>
+    <div class="grid-bottom"><article class="card"><div class="card-head"><div><p class="label">ATIVIDADE</p><h3>Últimos eventos</h3></div><button class="text-btn" data-go="automations">Ver tudo →</button></div><div id="events" class="events"></div></article><article class="card quick"><div class="card-head"><div><p class="label">ATALHOS</p><h3>Ações rápidas</h3></div></div><button data-action="new-member"><span>＋</span><div><b>Novo assinante</b><small>Cadastre manualmente</small></div><em>→</em></button><button id="renewalsBtn"><span>↻</span><div><b>Executar renovações</b><small>Lembretes e remoções</small></div><em>→</em></button><button data-go="affiliates"><span>⌁</span><div><b>Gerenciar afiliados</b><small>Links e comissões</small></div><em>→</em></button></article></div>
+  </section>
+  <section id="members" class="view"><div class="toolbar"><input id="memberSearch" placeholder="Buscar por nome, e-mail ou Telegram"><button class="primary" data-action="new-member">＋ Novo assinante</button></div><article class="card table-card"><table><thead><tr><th>ASSINANTE</th><th>PLANO</th><th>STATUS</th><th>VENCIMENTO</th><th>ORIGEM</th></tr></thead><tbody id="membersTable"></tbody></table></article></section>
+  <section id="payments" class="view"><article class="card table-card"><div class="card-head padded"><div><p class="label">TRANSAÇÕES</p><h3>Histórico de pagamentos</h3></div></div><table><thead><tr><th>CLIENTE</th><th>VALOR</th><th>STATUS</th><th>DATA</th><th>PROVEDOR</th></tr></thead><tbody id="paymentsTable"></tbody></table></article></section>
+  <section id="affiliates" class="view"><div class="section-intro"><div><h2>Programa de afiliados</h2><p>Acompanhe vendas e comissões da sua rede.</p></div><button class="primary">＋ Novo afiliado</button></div><div class="affiliate-grid" id="affiliateGrid"></div></section>
+  <section id="automations" class="view"><div class="section-intro"><div><h2>Central de automações</h2><p>Fluxos que mantêm sua operação rodando.</p></div></div><div class="automation-grid"><article class="automation"><span class="auto-icon green-bg">✓</span><div><b>Pagamento aprovado</b><p>Libera convite único no Telegram e registra a assinatura.</p></div><i class="toggle on"></i></article><article class="automation"><span class="auto-icon orange-bg">↻</span><div><b>Régua de renovação</b><p>Lembretes automáticos 7, 3 e 1 dia antes do vencimento.</p></div><i class="toggle on"></i></article><article class="automation"><span class="auto-icon red-bg">×</span><div><b>Remoção por inadimplência</b><p>Remove do grupo após o período de tolerância.</p></div><i class="toggle on"></i></article><article class="automation"><span class="auto-icon purple-bg">⌁</span><div><b>Webhook n8n</b><p>Replica eventos para seus fluxos e integrações futuras.</p></div><i class="toggle"></i></article></div><article class="card event-log"><div class="card-head"><div><p class="label">LOG DE EXECUÇÕES</p><h3>Eventos recentes</h3></div></div><div id="allEvents" class="events"></div></article></section>
+  <section id="settings" class="view"><div class="settings-grid"><article class="card setting"><h3>Telegram Bot</h3><p>Crie o bot no @BotFather, torne-o administrador do grupo e informe as credenciais no arquivo <code>.env</code>.</p><span class="connection" id="tgConnection">Modo demonstração</span></article><article class="card setting"><h3>Pushin Pay</h3><p>Configure o token e a URL <code>/api/webhooks/pushinpay</code> no gateway.</p><span class="connection" id="pixConnection">Modo demonstração</span></article><article class="card setting"><h3>n8n</h3><p>Use o webhook para CRM, IA, campanhas e relatórios externos.</p><span class="connection" id="n8nConnection">Não conectado</span></article></div></section>
+</main>
+<div class="modal" id="memberModal"><form id="memberForm"><div class="modal-head"><div><p class="label">CADASTRO MANUAL</p><h2>Novo assinante</h2></div><button type="button" class="close">×</button></div><label>Nome completo<input name="name" required placeholder="Ex.: Pedro Santos"></label><label>E-mail<input name="email" type="email" required placeholder="pedro@email.com"></label><label>Telegram<input name="telegram" placeholder="@usuario"></label><label>Plano<select name="plan"><option>Mensal</option><option>Vitalício</option></select></label><button class="primary full" type="submit">Cadastrar assinante</button></form></div>
+<div class="toast" id="toast"></div>
+<script type="module" src="/app.js"></script>
+</body></html>
