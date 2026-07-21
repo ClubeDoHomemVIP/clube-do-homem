@@ -53,3 +53,11 @@ test('rejeita comando com chave incorreta', async () => {
   assert.equal(result.authorized, false);
   assert.match(sent[0].payload.text, /inválida/i);
 });
+
+test('responde aos comandos públicos sem chave administrativa', async () => {
+  const sent = [];
+  const telegram = async (method, payload) => { sent.push({ method, payload }); return { ok: true }; };
+  const result = await handleControlCommand({ text: '/start', chatId: 123, telegram, env: {} });
+  assert.equal(result.action, '/start');
+  assert.match(sent[0].payload.text, /grupo de prévias grátis/i);
+});

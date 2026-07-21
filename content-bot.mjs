@@ -192,6 +192,15 @@ export async function handleControlCommand({ text, chatId, telegram, env = proce
   const config = contentConfig(env);
   const [command = '', key = ''] = String(text || '').trim().split(/\s+/, 2);
   const action = command.toLowerCase().split('@')[0];
+  if (action === '/start' || action === '/ajuda') {
+    const siteUrl = env.PUBLIC_SITE_URL || 'https://clubedohomemvip.github.io/clube-do-homem/';
+    const freeUrl = env.TELEGRAM_FREE_URL || 'https://t.me/previasclubedohomem';
+    const reply = action === '/start'
+      ? `Bem-vindo ao Clube do Homem 🔞\n\nEscolha uma opção:\n• Conhecer os planos: ${siteUrl}\n• Entrar no grupo de prévias grátis: ${freeUrl}\n\nApós a confirmação do pagamento, seu convite individual para o VIP será enviado por aqui.`
+      : `Precisa de ajuda?\n\nPlanos e acesso: ${siteUrl}\nPrévias gratuitas: ${freeUrl}\n\nSe o pagamento já foi realizado, aguarde a confirmação automática antes de tentar novamente.`;
+    await telegram('sendMessage', { chat_id: chatId, text: reply, disable_web_page_preview: true });
+    return { handled: true, authorized: true, action };
+  }
   if (!['/registrar', '/ativar', '/desativar', '/aprovacao', '/automatico', '/aprovar', '/recusar', '/status'].includes(action)) return { handled: false };
   if (!secretMatches(key, config.controlKey)) {
     await telegram('sendMessage', { chat_id: chatId, text: 'Chave inválida.' });
@@ -225,7 +234,7 @@ export async function handleControlCommand({ text, chatId, telegram, env = proce
 
 export function startTelegramController({ telegram, env = process.env, onError = console.error } = {}) {
   const config = contentConfig(env);
-  if (!config.controlKey || !env.TELEGRAM_BOT_TOKEN) return { enabled: false, stop() {} };
+  if (!env.TELEGRAM_BOT_TOKEN) return { enabled: false, stop() {} };
   let stopped = false; let offset = 0;
   const loop = async () => {
     while (!stopped) {
