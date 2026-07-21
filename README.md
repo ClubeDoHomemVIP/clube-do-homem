@@ -17,7 +17,7 @@ Acesse `http://localhost:3000`. Sem credenciais, Telegram e pagamentos operam em
 2. Preencha `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` no ambiente.
 3. Configure na SyncPay o webhook `POST https://seu-dominio/api/webhooks/syncpay`.
 4. Envie o ID do assinante em `external_reference`; o handler aceita os estados `paid`, `approved` e `completed`.
-5. Proteja o webhook com `SYNCPAY_WEBHOOK_TOKEN` usando `Authorization: Bearer SEU_TOKEN`.
+5. O backend confirma cada pagamento concluído consultando a API da SyncPay antes de liberar o acesso.
 6. Agende `POST /api/jobs/renewals` diariamente no n8n ou no cron da hospedagem.
 
 ## Curadoria automática para o grupo gratuito

@@ -11,6 +11,8 @@ const DATA_FILE = join(ROOT, 'data', 'store.json');
 const PUBLIC = join(ROOT, 'public');
 const PORT = Number(process.env.PORT || 3000);
 const supabase = createSupabaseClient();
+let syncPayAccessToken = null;
+let syncPayAccessTokenExpiresAt = 0;
 
 const seed = () => ({
   members: [
@@ -62,6 +64,31 @@ async function telegram(method, payload) {
   const result = await response.json();
   if (!result.ok) throw new Error(result.description || 'Erro no Telegram');
   return result;
+}
+
+async function syncPayToken() {
+  if (syncPayAccessToken && Date.now() < syncPayAccessTokenExpiresAt - 60000) return syncPayAccessToken;
+  const clientId = process.env.SYNCPAY_CLIENT_ID;
+  const clientSecret = process.env.SYNCPAY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error('Credenciais SyncPay ausentes');
+  const response = await fetch('https://api.syncpayments.com.br/api/partner/v1/auth-token', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_id: clientId, client_secret: clientSecret })
+  });
+  const result = await response.json();
+  if (!response.ok || !result.access_token) throw new Error('Falha ao autenticar na SyncPay');
+  syncPayAccessToken = result.access_token;
+  syncPayAccessTokenExpiresAt = Date.now() + Number(result.expires_in || 3600) * 1000;
+  return syncPayAccessToken;
+}
+
+async function verifySyncPayTransaction(identifier, expectedAmount) {
+  const token = await syncPayToken();
+  const response = await fetch(`https://api.syncpayments.com.br/api/partner/v1/transaction/${encodeURIComponent(identifier)}`, { headers: { authorization: `Bearer ${token}` } });
+  const result = await response.json();
+  if (!response.ok) throw new Error('Transação SyncPay não encontrada');
+  const transaction = result.data || result;
+  const amountMatches = Math.abs(Number(transaction.amount) - Number(expectedAmount)) < 0.01;
+  return { verified: String(transaction.status).toLowerCase() === 'completed' && amountMatches, transaction };
 }
 
 async function grantAccess(store, member) {
@@ -157,18 +184,19 @@ async function api(req, res, url) {
     store.processedWebhooks.push(id); await save(store); return json(res, 200, { received: true });
   }
   if (req.method === 'POST' && url.pathname === '/api/webhooks/syncpay') {
-    const webhookToken = process.env.SYNCPAY_WEBHOOK_TOKEN;
-    if (webhookToken && !safeEqual(req.headers.authorization || '', `Bearer ${webhookToken}`)) return json(res, 401, { error: 'Assinatura inválida' });
     const payload = await body(req);
     const data = payload.data || payload;
     const id = String(data.id || data.identifier || data.idtransaction || '');
+    if (!id && (typeof payload === 'string' || /test webhook/i.test(String(payload.message || '')))) return json(res, 200, { received: true, test: true });
     if (!id) return json(res, 400, { error: 'Identificador ausente' });
     if (store.processedWebhooks.includes(id)) return json(res, 200, { received: true, duplicate: true });
     const status = String(data.status || '').toLowerCase();
-    const memberId = data.external_reference || data.externalreference || data.member_id;
     if (['paid', 'approved', 'completed'].includes(status)) {
+      const verified = await verifySyncPayTransaction(id, data.amount);
+      if (!verified.verified) return json(res, 409, { error: 'Pagamento não confirmado na SyncPay' });
+      const memberId = data.external_reference || data.externalreference || data.member_id || verified.transaction.reference_id;
       if (!memberId) return json(res, 400, { error: 'Referência do assinante ausente' });
-      await processPayment(store, { id, memberId, amount: Number(data.amount || 0), provider: 'SyncPay' });
+      await processPayment(store, { id, memberId, amount: Number(verified.transaction.amount || data.amount || 0), provider: 'SyncPay' });
     }
     store.processedWebhooks.push(id);
     await save(store);
