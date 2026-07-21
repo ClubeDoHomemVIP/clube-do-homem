@@ -5,7 +5,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "pushinpay-clube-do-homem",
+        "path": "syncpay-clube-do-homem",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -14,14 +14,14 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [0, 0],
-      "webhookId": "clube-pushinpay-webhook"
+      "webhookId": "clube-syncpay-webhook"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ ($env.APP_URL || 'http://localhost:3000') + '/api/webhooks/pushinpay' }}",
+        "url": "={{ ($env.APP_URL || 'http://localhost:3000') + '/api/webhooks/syncpay' }}",
         "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "x-webhook-secret", "value": "={{ $env.PUSHINPAY_WEBHOOK_SECRET || '' }}" }] },
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "={{ 'Bearer ' + ($env.SYNCPAY_WEBHOOK_TOKEN || '') }}" }] },
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",

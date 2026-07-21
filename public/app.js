@@ -15,7 +15,7 @@ function render(){
   renderMembers(data.members);$('#paymentsTable').innerHTML=data.payments.map(p=>`<tr><td><b>${p.customer}</b><small>${p.id.slice(0,14)}</small></td><td>${money(p.amount)}</td><td><span class="badge ${p.status}">${labels[p.status]}</span></td><td>${date(p.paidAt||p.createdAt)}</td><td>${p.provider}</td></tr>`).join('');
   $('#affiliateGrid').innerHTML=data.affiliates.map(a=>`<article class="card affiliate"><div class="affiliate-top"><div class="affiliate-avatar">${a.name.split(' ').map(x=>x[0]).join('').slice(0,2)}</div><code>${a.code}</code></div><h3>${a.name}</h3><p>Comissão de 20% por venda</p><div class="affiliate-stats"><span><small>VENDAS</small><b>${a.sales}</b></span><span><small>RECEITA</small><b>${money(a.revenue)}</b></span><span><small>COMISSÃO</small><b>${money(a.commission)}</b></span></div></article>`).join('');
   $('#tgConnection').textContent=data.settings.telegramConnected?'Conectado':'Modo demonstração';
-  $('#pixConnection').textContent=data.settings.pushinConnected?'Conectado':'Aguardando credenciais';
+  $('#pixConnection').textContent=data.settings.syncPayConnected?'Conectado':'Aguardando credenciais';
   $('#n8nConnection').textContent=data.settings.n8nConnected?'Conectado':'Não conectado';
 }
 function renderMembers(items){$('#membersTable').innerHTML=items.map(m=>`<tr><td><b>${m.name}</b><small>${m.email} · ${m.telegram}</small></td><td>${m.plan}<small>${money(m.amount)}</small></td><td><span class="badge ${m.status}">${labels[m.status]||m.status}</span></td><td>${date(m.expiresAt)}</td><td>${m.affiliate}</td></tr>`).join('')}

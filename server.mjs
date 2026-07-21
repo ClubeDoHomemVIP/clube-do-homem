@@ -80,7 +80,7 @@ async function processPayment(store, payment) {
   if (previous?.status === 'paid') return { duplicate: true, payment: previous };
   const member = store.members.find(m => m.id === payment.memberId);
   if (!member) throw new Error('Assinante não encontrado');
-  const record = previous || { id: payment.id, memberId: member.id, customer: member.name, amount: Number(payment.amount), createdAt: new Date().toISOString(), provider: payment.provider || 'Pushin Pay' };
+  const record = previous || { id: payment.id, memberId: member.id, customer: member.name, amount: Number(payment.amount), createdAt: new Date().toISOString(), provider: payment.provider || 'SyncPay' };
   record.status = 'paid'; record.paidAt = new Date().toISOString();
   if (!previous) store.payments.unshift(record);
   const inviteLink = await grantAccess(store, member);
@@ -102,7 +102,7 @@ function dashboard(store) {
     members: store.members, payments: store.payments, affiliates: store.affiliates, events: store.events.slice(0, 20), settings: {
       ...store.settings,
       telegramConnected: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
-      pushinConnected: Boolean(process.env.PUSHINPAY_API_TOKEN),
+      syncPayConnected: Boolean(process.env.SYNCPAY_CLIENT_ID && process.env.SYNCPAY_CLIENT_SECRET),
       n8nConnected: Boolean(process.env.N8N_WEBHOOK_URL)
     },
     chart: Array.from({ length: 7 }, (_, i) => ({ label: ['Jan','Fev','Mar','Abr','Mai','Jun','Jul'][i], revenue: [4200,5100,4850,6200,7100,8350,9780][i] }))
@@ -155,6 +155,24 @@ async function api(req, res, url) {
     const status = String(payload.status || '').toLowerCase();
     if (['paid', 'approved', 'completed'].includes(status)) await processPayment(store, { id, memberId: payload.member_id || payload.external_reference, amount: Number(payload.amount || 0) / (Number(payload.amount || 0) > 1000 ? 100 : 1) });
     store.processedWebhooks.push(id); await save(store); return json(res, 200, { received: true });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/webhooks/syncpay') {
+    const webhookToken = process.env.SYNCPAY_WEBHOOK_TOKEN;
+    if (webhookToken && !safeEqual(req.headers.authorization || '', `Bearer ${webhookToken}`)) return json(res, 401, { error: 'Assinatura inválida' });
+    const payload = await body(req);
+    const data = payload.data || payload;
+    const id = String(data.id || data.identifier || data.idtransaction || '');
+    if (!id) return json(res, 400, { error: 'Identificador ausente' });
+    if (store.processedWebhooks.includes(id)) return json(res, 200, { received: true, duplicate: true });
+    const status = String(data.status || '').toLowerCase();
+    const memberId = data.external_reference || data.externalreference || data.member_id;
+    if (['paid', 'approved', 'completed'].includes(status)) {
+      if (!memberId) return json(res, 400, { error: 'Referência do assinante ausente' });
+      await processPayment(store, { id, memberId, amount: Number(data.amount || 0), provider: 'SyncPay' });
+    }
+    store.processedWebhooks.push(id);
+    await save(store);
+    return json(res, 200, { received: true });
   }
   if (!authorized(req)) return json(res, 401, { error: 'Não autorizado' });
   return json(res, 404, { error: 'Rota não encontrada' });

@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: clube-do-homem-api
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.mjs
+    healthCheckPath: /api/dashboard
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: APP_URL
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_FREE_CHAT_ID
+        sync: false
+      - key: SYNCPAY_CLIENT_ID
+        sync: false
+      - key: SYNCPAY_CLIENT_SECRET
+        sync: false
+      - key: SYNCPAY_WEBHOOK_TOKEN
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

@@ -15,9 +15,9 @@ Acesse `http://localhost:3000`. Sem credenciais, Telegram e pagamentos operam em
 
 1. Crie um bot no `@BotFather` e adicione-o como administrador do grupo privado, com permissão para convidar e remover membros.
 2. Preencha `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` no ambiente.
-3. Configure no gateway o webhook `POST https://seu-dominio/api/webhooks/pushinpay`.
-4. Envie o ID do assinante em `member_id` ou `external_reference`; o handler aceita os estados `paid`, `approved` e `completed`.
-5. Proteja o webhook com `PUSHINPAY_WEBHOOK_SECRET` no header `x-webhook-secret` (ajuste o adaptador se a conta usar outro mecanismo de assinatura).
+3. Configure na SyncPay o webhook `POST https://seu-dominio/api/webhooks/syncpay`.
+4. Envie o ID do assinante em `external_reference`; o handler aceita os estados `paid`, `approved` e `completed`.
+5. Proteja o webhook com `SYNCPAY_WEBHOOK_TOKEN` usando `Authorization: Bearer SEU_TOKEN`.
 6. Agende `POST /api/jobs/renewals` diariamente no n8n ou no cron da hospedagem.
 
 ## Curadoria automática para o grupo gratuito
@@ -51,14 +51,14 @@ Execute `supabase/schema.sql` no SQL Editor do projeto. As tabelas usam RLS sem 
 - `npm run n8n:import`: importa o fluxo básico desativado.
 - `npm run n8n`: abre o editor local em `http://127.0.0.1:5678`.
 - Os dados ficam em `data/n8n` e a criptografia usa `N8N_ENCRYPTION_KEY` ou `ADMIN_TOKEN`.
-- O fluxo encaminha o webhook da Pushin Pay ao backend e executa renovações diariamente às 09h.
+- O fluxo encaminha o webhook da SyncPay ao backend e executa renovações diariamente às 09h.
 
 ## Rotas principais
 
 - `GET /api/dashboard`
 - `POST /api/members`
 - `POST /api/demo/payment`
-- `POST /api/webhooks/pushinpay`
+- `POST /api/webhooks/syncpay`
 - `POST /api/jobs/renewals`
 
 Para volume real, substitua o arquivo JSON por Supabase/PostgreSQL e proteja as rotas administrativas com autenticação de sessão. O processamento de webhooks já é idempotente.
