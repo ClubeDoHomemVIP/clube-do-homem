@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { publishTrending, startContentScheduler } from './content-bot.mjs';
 
 const ROOT = process.cwd();
 const DATA_FILE = join(ROOT, 'data', 'store.json');
@@ -126,6 +127,12 @@ async function api(req, res, url) {
     }
     await save(store); return json(res, 200, { reminded, removed });
   }
+  if (req.method === 'POST' && url.pathname === '/api/jobs/content') {
+    if (!authorized(req)) return json(res, 401, { error: 'Não autorizado' });
+    const result = await publishTrending({ telegram });
+    store.events.unshift(event('content.published', result.published ? `Conteúdo publicado: ${result.item.title}` : result.reason, result.published ? 'success' : 'info'));
+    await save(store); return json(res, 200, result);
+  }
   if (req.method === 'POST' && url.pathname === '/api/webhooks/pushinpay') {
     const secret = process.env.PUSHINPAY_WEBHOOK_SECRET;
     if (secret && !safeEqual(req.headers['x-webhook-secret'] || '', secret)) return json(res, 401, { error: 'Assinatura inválida' });
@@ -152,3 +159,4 @@ const server = http.createServer(async (req, res) => {
   } catch (err) { if (err.code === 'ENOENT') return json(res, 404, { error: 'Não encontrado' }); console.error(err); json(res, 500, { error: err.message }); }
 });
 server.listen(PORT, () => console.log(`Clube OS rodando em http://localhost:${PORT}`));
+startContentScheduler({ telegram, onError: error => console.error('[content-bot]', error.message) });

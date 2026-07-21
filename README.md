@@ -20,6 +20,18 @@ Acesse `http://localhost:3000`. Sem credenciais, Telegram e pagamentos operam em
 5. Proteja o webhook com `PUSHINPAY_WEBHOOK_SECRET` no header `x-webhook-secret` (ajuste o adaptador se a conta usar outro mecanismo de assinatura).
 6. Agende `POST /api/jobs/renewals` diariamente no n8n ou no cron da hospedagem.
 
+## Curadoria automática para o grupo gratuito
+
+O bot consulta o Google Trends Brasil e, opcionalmente, fontes Reddit autorizadas; cria uma chamada curta com crédito e publica no Telegram sem copiar o conteúdo integral.
+
+1. Configure `TELEGRAM_FREE_CHAT_ID` (ou `CONTENT_TELEGRAM_CHAT_ID`).
+2. O Google Trends vem ativo. `CONTENT_REDDIT_SOURCES` é opcional e exige que o ambiente consiga acessar o Reddit.
+3. Defina os horários em `CONTENT_POST_TIMES` no fuso `CONTENT_TIMEZONE`.
+4. Ative com `CONTENT_BOT_ENABLED=true` e mantenha o servidor online.
+5. Para testar manualmente, envie `POST /api/jobs/content` com `Authorization: Bearer SEU_ADMIN_TOKEN`.
+
+Por padrão, conteúdo marcado como NSFW é ignorado. Use apenas fontes e mídias cuja republicação seja permitida; o bot publica título, métricas e link para a fonte.
+
 ## Rotas principais
 
 - `GET /api/dashboard`
