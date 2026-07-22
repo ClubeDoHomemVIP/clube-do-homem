@@ -95,7 +95,22 @@ async function sendWelcomeBanner(env, chatId) {
     chat_id: chatId,
     photo: 'https://raw.githubusercontent.com/ClubeDoHomemVIP/clube-do-homem/master/public/assets/bot-banner-feminino.png',
     parse_mode: 'HTML',
-    caption: '🔥 <b>CLUBE DO HOMEM VIP</b>\n\nAcesso rápido, privado e automático. Escolha seu plano e pague por PIX abaixo. 🔞'
+    caption: '🔥 <b>CLUBE DO HOMEM VIP</b>\n\nConteúdo exclusivo, novidades frequentes e acesso privado. 🔞\n\nToque abaixo para conhecer as opções de acesso.',
+    reply_markup: { inline_keyboard: [[
+      { text: '⭐ CONHECER OS PLANOS', callback_data: 'show_plans' }
+    ]] }
+  });
+}
+
+async function sendPlans(env, chatId) {
+  return telegram(env, 'sendMessage', {
+    chat_id: chatId,
+    parse_mode: 'HTML',
+    text: '💎 <b>ESCOLHA SEU ACESSO VIP</b>\n\n📅 <b>Mensal — R$ 19,90</b>\nAcesso por 30 dias.\n\n♾ <b>Vitalício — R$ 49,90</b>\nPagamento único e acesso permanente.\n\n👇 Selecione um plano para gerar seu PIX:',
+    reply_markup: { inline_keyboard: [
+      [{ text: '📅 MENSAL — R$ 19,90', callback_data: 'plan_monthly' }],
+      [{ text: '♾ VITALÍCIO — R$ 49,90', callback_data: 'plan_lifetime' }]
+    ] }
   });
 }
 
@@ -166,12 +181,16 @@ async function telegramWebhook(request, env, origin) {
   const update = await request.json();
   if (update.callback_query) {
     const callback = update.callback_query;
-    await telegram(env, 'answerCallbackQuery', { callback_query_id: callback.id, text: 'Gerando seu PIX…' });
-    const plan = callback.data === 'plan_lifetime' ? 'lifetime' : 'monthly';
-    await sendPlanPix(env, callback.message.chat.id, callback.from, plan);
+    if (callback.data === 'show_plans') {
+      await telegram(env, 'answerCallbackQuery', { callback_query_id: callback.id });
+      await sendPlans(env, callback.message.chat.id);
+    } else {
+      await telegram(env, 'answerCallbackQuery', { callback_query_id: callback.id, text: 'Gerando seu PIX…' });
+      const plan = callback.data === 'plan_lifetime' ? 'lifetime' : 'monthly';
+      await sendPlanPix(env, callback.message.chat.id, callback.from, plan);
+    }
   } else if (update.message?.text?.startsWith('/start')) {
     await sendWelcomeBanner(env, update.message.chat.id);
-    await sendPlanPix(env, update.message.chat.id, update.message.from, 'monthly');
   }
   return json({ received: true }, 200, origin);
 }
