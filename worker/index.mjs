@@ -159,10 +159,25 @@ async function telegramCustomer(env, user, chatId) {
   return created[0];
 }
 
+async function trackTelegramStart(env, customer, startParam = '') {
+  await supabase(env, 'events', { method: 'POST', body: {
+    event_type: 'funnel.start', entity_type: 'customer', entity_id: customer.id,
+    payload: { start_param: startParam || null }
+  } });
+  if (!startParam.startsWith('ref_')) return;
+  const code = startParam.slice(4).trim().toUpperCase();
+  if (!code) return;
+  const affiliate = await supabase(env, `affiliates?code=eq.${encodeURIComponent(code)}&status=eq.active&select=id,code&limit=1`);
+  if (!affiliate?.[0]) return;
+  const prior = await supabase(env, `events?event_type=eq.affiliate.attributed&entity_id=eq.${customer.id}&select=id&limit=1`);
+  if (!prior?.[0]) await recordEvent(env, 'affiliate.attributed', customer.id, { affiliate_id: affiliate[0].id, code }, 'customer');
+}
+
 async function sendPlanPix(env, chatId, user, requestedPlan = 'monthly') {
   const plan = requestedPlan === 'lifetime' ? 'lifetime' : 'monthly';
   const selected = PLANS[plan];
   const customer = await telegramCustomer(env, user, chatId);
+  const attribution = await supabase(env, `events?event_type=eq.affiliate.attributed&entity_id=eq.${customer.id}&select=payload&order=created_at.asc&limit=1`);
   const subscriptions = await supabase(env, 'subscriptions', {
     method: 'POST', prefer: 'return=representation', body: {
       customer_id: customer.id, plan, amount_cents: selected.amountCents, status: 'pending'
@@ -179,7 +194,7 @@ async function sendPlanPix(env, chatId, user, requestedPlan = 'monthly') {
   await supabase(env, 'payments', { method: 'POST', body: {
     provider_id: correlationID, customer_id: customer.id, subscription_id: subscriptions[0].id,
     provider: 'woovi', amount_cents: selected.amountCents, status: 'pending',
-    raw_payload: { telegram_chat_id: chatId, woovi_charge: charge }
+    raw_payload: { telegram_chat_id: chatId, woovi_charge: charge, affiliate_code: attribution?.[0]?.payload?.code || null }
   } });
   const price = (selected.amountCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const caption = `🔞 <b>Clube do Homem VIP</b>\n\n💎 Plano ${selected.label}: <b>${price}</b>\n📱 Escaneie o QR Code ou toque no código abaixo para copiar.\n\n<code>${escapeHtml(pixCode)}</code>\n\n✅ Acesso enviado automaticamente após a confirmação.\n🔒 Conteúdo adulto legal e exclusivo para maiores de 18 anos.`;
@@ -207,6 +222,9 @@ async function telegramWebhook(request, env, origin) {
       await sendPlanPix(env, callback.message.chat.id, callback.from, plan);
     }
   } else if (update.message?.text?.startsWith('/start')) {
+    const startParam = update.message.text.trim().split(/\s+/)[1] || '';
+    const customer = await telegramCustomer(env, update.message.from, update.message.chat.id);
+    await trackTelegramStart(env, customer, startParam);
     await sendWelcomeBanner(env, update.message.chat.id);
   }
   return json({ received: true }, 200, origin);
@@ -248,6 +266,12 @@ async function wooviWebhook(request, env, origin) {
     chat_id: payment.raw_payload.telegram_chat_id, parse_mode: 'HTML',
     text: `✅ <b>Pagamento confirmado!</b>\n\nSeu acesso VIP está liberado:\n${invite.invite_link}\n\n⏳ Link individual, válido por 24 horas e para uma única entrada.`
   });
+  if (!await eventExists(env, 'funnel.purchase', payment.id)) {
+    await recordEvent(env, 'funnel.purchase', payment.id, {
+      payment_id: payment.id, amount_cents: payment.amount_cents,
+      affiliate_code: payment.raw_payload.affiliate_code || null
+    }, 'payment');
+  }
   return json({ received: true }, 200, origin);
 }
 
@@ -282,9 +306,9 @@ async function eventExists(env, eventType, entityId) {
   return Boolean(rows?.[0]);
 }
 
-async function recordEvent(env, eventType, entityId, payload = {}) {
+async function recordEvent(env, eventType, entityId, payload = {}, entityType = 'subscription') {
   await supabase(env, 'events', { method: 'POST', body: {
-    event_type: eventType, entity_type: 'subscription', entity_id: entityId, payload
+    event_type: eventType, entity_type: entityType, entity_id: entityId, payload
   } });
 }
 
@@ -341,13 +365,22 @@ function adminAuthorized(request, env) {
 }
 
 async function adminDashboard(env) {
-  const [customers, subscriptions, payments, recentPayments, expiring] = await Promise.all([
+  const [customers, subscriptions, payments, recentPayments, expiring, events, affiliates] = await Promise.all([
     supabase(env, 'customers?select=id,status'),
     supabase(env, 'subscriptions?select=id,status,plan,amount_cents,expires_at'),
     supabase(env, 'payments?status=eq.paid&select=id,amount_cents,paid_at'),
     supabase(env, 'payments?select=id,provider,provider_id,amount_cents,status,paid_at,created_at,customers(name,telegram_username)&order=created_at.desc&limit=20'),
-    supabase(env, `subscriptions?status=eq.active&plan=eq.monthly&expires_at=lte.${encodeURIComponent(new Date(Date.now() + 7 * 86400000).toISOString())}&select=id,plan,expires_at,customers(name,telegram_username,telegram_user_id)&order=expires_at.asc&limit=20`)
+    supabase(env, `subscriptions?status=eq.active&plan=eq.monthly&expires_at=lte.${encodeURIComponent(new Date(Date.now() + 7 * 86400000).toISOString())}&select=id,plan,expires_at,customers(name,telegram_username,telegram_user_id)&order=expires_at.asc&limit=20`),
+    supabase(env, 'events?event_type=in.(funnel.start,funnel.purchase,affiliate.attributed)&select=event_type,entity_id,payload,created_at'),
+    supabase(env, 'affiliates?select=id,name,code,commission_percent,status&order=created_at.desc')
   ]);
+  const starts = new Set(events.filter(item => item.event_type === 'funnel.start').map(item => item.entity_id)).size;
+  const purchases = events.filter(item => item.event_type === 'funnel.purchase');
+  const affiliateStats = affiliates.map(affiliate => {
+    const sales = purchases.filter(item => item.payload?.affiliate_code === affiliate.code);
+    const revenueCents = sales.reduce((total, item) => total + Number(item.payload?.amount_cents || 0), 0);
+    return { ...affiliate, sales: sales.length, revenueCents, commissionCents: Math.round(revenueCents * Number(affiliate.commission_percent) / 100) };
+  });
   return {
     summary: {
       customers: customers.length,
@@ -355,10 +388,13 @@ async function adminDashboard(env) {
       monthly: subscriptions.filter(item => item.status === 'active' && item.plan === 'monthly').length,
       lifetime: subscriptions.filter(item => item.status === 'active' && item.plan === 'lifetime').length,
       revenueCents: payments.reduce((total, item) => total + item.amount_cents, 0),
-      paidPayments: payments.length
+      paidPayments: payments.length,
+      starts,
+      conversion: starts ? Math.round(purchases.length / starts * 1000) / 10 : 0
     },
     recentPayments,
-    expiring
+    expiring,
+    affiliates: affiliateStats
   };
 }
 
@@ -467,6 +503,17 @@ export default {
         if (!adminAuthorized(request, env)) return json({ error: 'Não autorizado' }, 401, origin);
         if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') return json(await adminDashboard(env), 200, origin);
         if (request.method === 'POST' && url.pathname === '/api/admin/renewals') return json(await renewalJob(env), 200, origin);
+        if (request.method === 'POST' && url.pathname === '/api/admin/affiliates') {
+          const input = await request.json();
+          const name = String(input.name || '').trim();
+          const code = String(input.code || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+          const commission = Math.min(100, Math.max(0, Number(input.commissionPercent || 20)));
+          if (!name || code.length < 3) return json({ error: 'Nome e código válido são obrigatórios' }, 400, origin);
+          const created = await supabase(env, 'affiliates', { method: 'POST', prefer: 'return=representation', body: {
+            name, code, commission_percent: commission, status: 'active'
+          } });
+          return json({ ...created[0], link: `https://t.me/clube_do_homem_acesso_bot?start=ref_${code}` }, 201, origin);
+        }
       }
       if (request.method === 'POST' && url.pathname === '/api/checkout/pix') return await createCheckout(request, env, origin);
       if (request.method === 'GET' && url.pathname.startsWith('/api/checkout/status/')) return await paymentStatus(env, decodeURIComponent(url.pathname.split('/').pop()), origin);

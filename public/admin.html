@@ -15,6 +15,9 @@
         <article><h2>Pagamentos recentes</h2><div class="table"><table><thead><tr><th>Cliente</th><th>Valor</th><th>Status</th><th>Data</th></tr></thead><tbody id="payments"></tbody></table></div></article>
         <article><h2>Vencimentos em até 7 dias</h2><div class="table"><table><thead><tr><th>Cliente</th><th>Telegram</th><th>Vencimento</th></tr></thead><tbody id="expiring"></tbody></table></div></article>
       </section>
+      <section class="affiliate-section">
+        <article><h2>Afiliados</h2><form id="affiliateForm"><input name="name" required placeholder="Nome do afiliado"><input name="code" required minlength="3" placeholder="Código: JOAO20"><input name="commissionPercent" type="number" min="0" max="100" value="20" placeholder="Comissão %"><button>Criar link</button></form><div class="table"><table><thead><tr><th>Afiliado</th><th>Link</th><th>Vendas</th><th>Receita</th><th>Comissão</th></tr></thead><tbody id="affiliates"></tbody></table></div></article>
+      </section>
     </div>
   </main>
   <script src="admin.js"></script>
