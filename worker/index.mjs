@@ -70,6 +70,23 @@ const PLANS = {
   lifetime: { label: 'Vitalício', amountCents: 4990 }
 };
 
+const WOOVI_PUBLIC_KEY_DER = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC/+NtIkjzevvqD+I3MMv3bLXDtpvxBjY4BsRrSdca3rtAwMcRYYvxSnd7jagVLpctMiOxQO8ieUCKLSWHpsMAjO/zZWMKbqoG8MNpi/u3fp6zz0mcHCOSqYsPUUG19buW8bis5ZZ2IZgBObWSpTvJ0cnj6HKBAA82Jln+lGwS1MwIDAQAB';
+
+function base64Bytes(value) {
+  return Uint8Array.from(atob(value), character => character.charCodeAt(0));
+}
+
+async function verifyWooviSignature(rawBody, signature) {
+  if (!signature) return false;
+  const key = await crypto.subtle.importKey(
+    'spki', base64Bytes(WOOVI_PUBLIC_KEY_DER),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']
+  );
+  return crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5', key, base64Bytes(signature), new TextEncoder().encode(rawBody)
+  );
+}
+
 async function telegramPhoto(env, chatId, pixCode, caption, replyMarkup) {
   const qr = qrcode(0, 'M');
   qr.addData(pixCode);
@@ -196,13 +213,16 @@ async function telegramWebhook(request, env, origin) {
 }
 
 async function wooviWebhook(request, env, origin) {
-  const payload = await request.json();
+  const rawBody = await request.text();
+  const payload = JSON.parse(rawBody);
   const event = String(payload.event || payload.type || '');
   if (event && !/(charge|transaction).*(complete|paid)|complete|paid/i.test(event)) return json({ received: true, ignored: true }, 200, origin);
   const charge = payload.charge || payload.data?.charge || payload.data || {};
   const correlationID = String(charge.correlationID || charge.correlationId || payload.correlationID || '');
   // A Woovi envia uma requisição de validação sem cobrança ao cadastrar o webhook.
   if (!correlationID) return json({ received: true, test: true }, 200, origin);
+  const signature = request.headers.get('x-webhook-signature');
+  if (!await verifyWooviSignature(rawBody, signature)) return json({ error: 'Assinatura Woovi inválida' }, 401, origin);
   const payments = await supabase(env, `payments?provider=eq.woovi&provider_id=eq.${encodeURIComponent(correlationID)}&select=id,amount_cents,customer_id,subscription_id,status,raw_payload&limit=1`);
   const payment = payments?.[0];
   if (!payment) return json({ error: 'Pagamento não encontrado' }, 404, origin);
@@ -222,17 +242,124 @@ async function wooviWebhook(request, env, origin) {
     status: 'paid', paid_at: now,
     raw_payload: { ...payment.raw_payload, webhook: payload, invite_link: invite.invite_link }
   } });
-  const subscription = await supabase(env, `subscriptions?id=eq.${payment.subscription_id}&select=plan&limit=1`);
-  await supabase(env, `subscriptions?id=eq.${payment.subscription_id}`, { method: 'PATCH', body: {
-    status: 'active', starts_at: now,
-    expires_at: subscription?.[0]?.plan === 'lifetime' ? null : new Date(Date.now() + 30 * 86400000).toISOString()
-  } });
+  await activateSubscription(env, payment, now);
   await supabase(env, `customers?id=eq.${payment.customer_id}`, { method: 'PATCH', body: { status: 'active' } });
   await telegram(env, 'sendMessage', {
     chat_id: payment.raw_payload.telegram_chat_id, parse_mode: 'HTML',
     text: `✅ <b>Pagamento confirmado!</b>\n\nSeu acesso VIP está liberado:\n${invite.invite_link}\n\n⏳ Link individual, válido por 24 horas e para uma única entrada.`
   });
   return json({ received: true }, 200, origin);
+}
+
+async function activateSubscription(env, payment, now = new Date().toISOString()) {
+  const subscriptions = await supabase(env, `subscriptions?id=eq.${payment.subscription_id}&select=id,plan,customer_id&limit=1`);
+  const current = subscriptions?.[0];
+  if (!current) throw new Error('Assinatura não encontrada');
+  const previous = await supabase(env, `subscriptions?customer_id=eq.${current.customer_id}&status=eq.active&id=neq.${current.id}&select=id,plan,expires_at`);
+  let expiresAt = null;
+  if (current.plan === 'monthly') {
+    const latestExpiry = previous
+      .filter(item => item.plan === 'monthly' && item.expires_at)
+      .map(item => new Date(item.expires_at).getTime())
+      .filter(Number.isFinite)
+      .reduce((maximum, value) => Math.max(maximum, value), Date.now());
+    expiresAt = new Date(latestExpiry + 30 * 86400000).toISOString();
+  }
+  if (previous.length) {
+    await supabase(env, `subscriptions?customer_id=eq.${current.customer_id}&status=eq.active&id=neq.${current.id}`, {
+      method: 'PATCH', body: { status: 'cancelled' }
+    });
+  }
+  await supabase(env, `subscriptions?id=eq.${current.id}`, { method: 'PATCH', body: {
+    status: 'active', starts_at: now, expires_at: expiresAt
+  } });
+  await supabase(env, `customers?id=eq.${current.customer_id}`, { method: 'PATCH', body: { status: 'active' } });
+  return { ...current, expires_at: expiresAt };
+}
+
+async function eventExists(env, eventType, entityId) {
+  const rows = await supabase(env, `events?event_type=eq.${encodeURIComponent(eventType)}&entity_id=eq.${encodeURIComponent(entityId)}&select=id&limit=1`);
+  return Boolean(rows?.[0]);
+}
+
+async function recordEvent(env, eventType, entityId, payload = {}) {
+  await supabase(env, 'events', { method: 'POST', body: {
+    event_type: eventType, entity_type: 'subscription', entity_id: entityId, payload
+  } });
+}
+
+async function renewalJob(env) {
+  const subscriptions = await supabase(env, 'subscriptions?status=eq.active&plan=eq.monthly&expires_at=not.is.null&select=id,customer_id,expires_at,customers(name,telegram_user_id)');
+  const now = Date.now();
+  let reminded = 0;
+  let removed = 0;
+  for (const subscription of subscriptions || []) {
+    const expiry = new Date(subscription.expires_at).getTime();
+    const days = Math.ceil((expiry - now) / 86400000);
+    const customer = Array.isArray(subscription.customers) ? subscription.customers[0] : subscription.customers;
+    if ([7, 3, 1, 0].includes(days) && customer?.telegram_user_id) {
+      const eventType = `subscription.reminder.${days}`;
+      if (!await eventExists(env, eventType, subscription.id)) {
+        const when = days === 0 ? 'vence hoje' : `vence em ${days} dia${days === 1 ? '' : 's'}`;
+        await telegram(env, 'sendMessage', {
+          chat_id: customer.telegram_user_id, parse_mode: 'HTML',
+          text: `⏰ <b>Lembrete de renovação</b>\n\nSeu acesso VIP ${when}. Renove agora para continuar sem interrupção.`,
+          reply_markup: { inline_keyboard: [[{ text: '🔄 RENOVAR AGORA', callback_data: 'plan_monthly' }]] }
+        });
+        await recordEvent(env, eventType, subscription.id, { days });
+        reminded++;
+      }
+    }
+    if (days < -2) {
+      const replacement = await supabase(env, `subscriptions?customer_id=eq.${subscription.customer_id}&status=eq.active&id=neq.${subscription.id}&or=(plan.eq.lifetime,expires_at.gt.${encodeURIComponent(new Date().toISOString())})&select=id&limit=1`);
+      if (replacement?.[0]) {
+        await supabase(env, `subscriptions?id=eq.${subscription.id}`, { method: 'PATCH', body: { status: 'expired' } });
+        continue;
+      }
+      if (!await eventExists(env, 'subscription.removed', subscription.id)) {
+        if (customer?.telegram_user_id) {
+          await telegram(env, 'banChatMember', { chat_id: env.TELEGRAM_CHAT_ID, user_id: customer.telegram_user_id });
+          await telegram(env, 'unbanChatMember', { chat_id: env.TELEGRAM_CHAT_ID, user_id: customer.telegram_user_id, only_if_banned: true });
+          await telegram(env, 'sendMessage', {
+            chat_id: customer.telegram_user_id,
+            text: 'Seu acesso VIP expirou. Use /start para renovar e voltar imediatamente.'
+          });
+        }
+        await supabase(env, `subscriptions?id=eq.${subscription.id}`, { method: 'PATCH', body: { status: 'expired' } });
+        await supabase(env, `customers?id=eq.${subscription.customer_id}`, { method: 'PATCH', body: { status: 'removed' } });
+        await recordEvent(env, 'subscription.removed', subscription.id);
+        removed++;
+      }
+    }
+  }
+  return { reminded, removed };
+}
+
+function adminAuthorized(request, env) {
+  const header = request.headers.get('authorization') || '';
+  return Boolean(env.ADMIN_API_KEY) && header === `Bearer ${env.ADMIN_API_KEY}`;
+}
+
+async function adminDashboard(env) {
+  const [customers, subscriptions, payments, recentPayments, expiring] = await Promise.all([
+    supabase(env, 'customers?select=id,status'),
+    supabase(env, 'subscriptions?select=id,status,plan,amount_cents,expires_at'),
+    supabase(env, 'payments?status=eq.paid&select=id,amount_cents,paid_at'),
+    supabase(env, 'payments?select=id,provider,provider_id,amount_cents,status,paid_at,created_at,customers(name,telegram_username)&order=created_at.desc&limit=20'),
+    supabase(env, `subscriptions?status=eq.active&plan=eq.monthly&expires_at=lte.${encodeURIComponent(new Date(Date.now() + 7 * 86400000).toISOString())}&select=id,plan,expires_at,customers(name,telegram_username,telegram_user_id)&order=expires_at.asc&limit=20`)
+  ]);
+  return {
+    summary: {
+      customers: customers.length,
+      active: subscriptions.filter(item => item.status === 'active').length,
+      monthly: subscriptions.filter(item => item.status === 'active' && item.plan === 'monthly').length,
+      lifetime: subscriptions.filter(item => item.status === 'active' && item.plan === 'lifetime').length,
+      revenueCents: payments.reduce((total, item) => total + item.amount_cents, 0),
+      paidPayments: payments.length
+    },
+    recentPayments,
+    expiring
+  };
 }
 
 async function customerForCheckout(env, input) {
@@ -316,9 +443,7 @@ async function syncPayWebhook(request, env, origin) {
       expire_date: Math.floor(Date.now() / 1000) + 86400, member_limit: 1
     });
     await supabase(env, `payments?id=eq.${payment.id}`, { method: 'PATCH', body: { status: 'paid', paid_at: new Date().toISOString(), raw_payload: { webhook: payload, invite_link: invite.invite_link } } });
-    const subscription = await supabase(env, `subscriptions?id=eq.${payment.subscription_id}&select=plan&limit=1`);
-    await supabase(env, `subscriptions?id=eq.${payment.subscription_id}`, { method: 'PATCH', body: { status: 'active', starts_at: new Date().toISOString(), expires_at: subscription?.[0]?.plan === 'lifetime' ? null : new Date(Date.now() + 30 * 86400000).toISOString() } });
-    await supabase(env, `customers?id=eq.${payment.customer_id}`, { method: 'PATCH', body: { status: 'active' } });
+    await activateSubscription(env, payment, new Date().toISOString());
     void expiresAt;
   }
   await supabase(env, `webhook_events?provider=eq.syncpay&provider_event_id=eq.${encodeURIComponent(identifier)}`, { method: 'PATCH', body: { processed_at: new Date().toISOString() } });
@@ -330,13 +455,18 @@ export default {
     const origin = request.headers.get('origin') || '';
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
       ...(ALLOWED_ORIGINS.has(origin) ? { 'access-control-allow-origin': origin } : {}),
-      'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'Content-Type'
+      'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'Content-Type, Authorization'
     } });
     try {
       const url = new URL(request.url);
       if (request.method === 'GET' && url.pathname === '/api/health') {
         await supabase(env, 'customers?select=id&limit=1');
         return json({ ok: true, database: true }, 200, origin);
+      }
+      if (url.pathname.startsWith('/api/admin/')) {
+        if (!adminAuthorized(request, env)) return json({ error: 'Não autorizado' }, 401, origin);
+        if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') return json(await adminDashboard(env), 200, origin);
+        if (request.method === 'POST' && url.pathname === '/api/admin/renewals') return json(await renewalJob(env), 200, origin);
       }
       if (request.method === 'POST' && url.pathname === '/api/checkout/pix') return await createCheckout(request, env, origin);
       if (request.method === 'GET' && url.pathname.startsWith('/api/checkout/status/')) return await paymentStatus(env, decodeURIComponent(url.pathname.split('/').pop()), origin);
@@ -348,5 +478,8 @@ export default {
       console.error(error);
       return json({ error: 'Erro interno' }, 500, origin);
     }
+  },
+  async scheduled(_controller, env, context) {
+    context.waitUntil(renewalJob(env));
   }
 };

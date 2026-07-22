@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Painel — Clube do Homem</title><link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <header><div><small>ADMINISTRAÇÃO</small><h1>Clube do Homem</h1></div><button id="logout">Sair</button></header>
+  <main>
+    <section id="login" class="login"><h2>Acesso restrito</h2><p>Informe sua chave administrativa.</p><input id="key" type="password" placeholder="Chave administrativa"><button id="enter">Entrar</button><span id="loginError"></span></section>
+    <div id="panel" hidden>
+      <div class="toolbar"><span id="updated"></span><button id="renewals">Executar renovações</button><button id="refresh">Atualizar</button></div>
+      <section class="cards" id="cards"></section>
+      <section class="grid">
+        <article><h2>Pagamentos recentes</h2><div class="table"><table><thead><tr><th>Cliente</th><th>Valor</th><th>Status</th><th>Data</th></tr></thead><tbody id="payments"></tbody></table></div></article>
+        <article><h2>Vencimentos em até 7 dias</h2><div class="table"><table><thead><tr><th>Cliente</th><th>Telegram</th><th>Vencimento</th></tr></thead><tbody id="expiring"></tbody></table></div></article>
+      </section>
+    </div>
+  </main>
+  <script src="admin.js"></script>
+</body></html>
