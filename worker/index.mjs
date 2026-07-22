@@ -1,3 +1,5 @@
+import qrcode from 'qrcode-generator';
+
 const ALLOWED_ORIGINS = new Set([
   'https://clubedohomemvip.github.io',
   'http://localhost:3000',
@@ -64,7 +66,8 @@ async function telegram(env, method, payload) {
 }
 
 async function customerForCheckout(env, input) {
-  const email = String(input.email).trim().toLowerCase();
+  const cpf = String(input.cpf).replace(/\D/g, '');
+  const email = String(input.email || `cliente+${cpf}@clubedohomem.local`).trim().toLowerCase();
   const found = await supabase(env, `customers?email=eq.${encodeURIComponent(email)}&select=id&limit=1`);
   if (found?.[0]) return found[0];
   const created = await supabase(env, 'customers', {
@@ -80,8 +83,8 @@ async function createCheckout(request, env, origin) {
   const input = await request.json();
   const cpf = String(input.cpf || '').replace(/\D/g, '');
   const phone = String(input.phone || '').replace(/\D/g, '');
-  if (!input.name || !input.email || cpf.length !== 11 || ![10, 11].includes(phone.length)) {
-    return json({ error: 'Preencha nome, e-mail, CPF e telefone válidos' }, 400, origin);
+  if (!input.name || cpf.length !== 11 || ![10, 11].includes(phone.length)) {
+    return json({ error: 'Preencha nome, CPF e telefone válidos' }, 400, origin);
   }
   const plan = input.plan === 'lifetime' ? 'lifetime' : 'monthly';
   const amount = plan === 'lifetime' ? 49.9 : 19.9;
@@ -96,7 +99,7 @@ async function createCheckout(request, env, origin) {
     method: 'POST', body: {
       amount, description: `Clube do Homem - ${plan === 'lifetime' ? 'Vitalício' : 'Mensal'}`,
       webhook_url: webhookUrl,
-      client: { name: String(input.name).trim(), cpf, email: String(input.email).trim().toLowerCase(), phone }
+      client: { name: String(input.name).trim(), cpf, email: `cliente+${cpf}@clubedohomem.local`, phone }
     }
   });
   await supabase(env, 'payments', {
@@ -106,7 +109,10 @@ async function createCheckout(request, env, origin) {
       raw_payload: { checkout_created: true }
     }
   });
-  return json({ identifier: charge.identifier, pixCode: charge.pix_code, amount, plan }, 201, origin);
+  const qr = qrcode(0, 'M');
+  qr.addData(charge.pix_code);
+  qr.make();
+  return json({ identifier: charge.identifier, pixCode: charge.pix_code, qrCodeSvg: qr.createSvgTag({ cellSize: 5, margin: 4, scalable: true }), amount, plan }, 201, origin);
 }
 
 async function paymentStatus(env, identifier, origin) {

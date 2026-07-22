@@ -4,3 +4,5 @@
 .modal form input, .modal textarea { width: 100%; margin-top: 5px; border: 1px solid #453632; background: #0d0b0b; color: #f2e9dc; padding: 12px; }
 .modal form .cta { margin-top: 8px; }
 .modal textarea { min-height: 90px; resize: none; }
+#pixQr { width: min(240px, 100%); margin: 12px auto; padding: 10px; background: #fff; }
+#pixQr svg { display: block; width: 100%; height: auto; }
