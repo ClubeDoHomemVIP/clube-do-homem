@@ -90,6 +90,15 @@ async function telegramPhoto(env, chatId, pixCode, caption, replyMarkup) {
   return result.result;
 }
 
+async function sendWelcomeBanner(env, chatId) {
+  return telegram(env, 'sendPhoto', {
+    chat_id: chatId,
+    photo: 'https://raw.githubusercontent.com/ClubeDoHomemVIP/clube-do-homem/master/public/assets/bot-banner-feminino.png',
+    parse_mode: 'HTML',
+    caption: '🔥 <b>CLUBE DO HOMEM VIP</b>\n\nAcesso rápido, privado e automático. Escolha seu plano e pague por PIX abaixo. 🔞'
+  });
+}
+
 async function woovi(env, path, options = {}) {
   const response = await fetch(`https://api.openpix.com.br/api/openpix/v1/${path}`, {
     method: options.method || 'GET',
@@ -161,6 +170,7 @@ async function telegramWebhook(request, env, origin) {
     const plan = callback.data === 'plan_lifetime' ? 'lifetime' : 'monthly';
     await sendPlanPix(env, callback.message.chat.id, callback.from, plan);
   } else if (update.message?.text?.startsWith('/start')) {
+    await sendWelcomeBanner(env, update.message.chat.id);
     await sendPlanPix(env, update.message.chat.id, update.message.from, 'monthly');
   }
   return json({ received: true }, 200, origin);

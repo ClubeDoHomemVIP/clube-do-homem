@@ -28,6 +28,7 @@ jobs:
           cp public/oferta.html _site/index.html
           cp public/oferta.css public/oferta-image.css public/checkout.css public/oferta.js _site/
           cp public/clube-hero.jpeg public/clube-logo.png public/og.jpg _site/
+          cp -r public/assets _site/assets
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
